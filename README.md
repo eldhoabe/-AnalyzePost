@@ -77,8 +77,10 @@ Run tests:
 
 ```bash
 cd backend
-pytest
+python3 -m pytest
 ```
+
+(Use `python3 -m pytest` rather than a bare `pytest` — on some machines a `pytest` binary earlier on `PATH` resolves to a different Python installation than the one `pip install` just targeted, and you'll get a confusing `ModuleNotFoundError: fastapi` instead of your tests running.)
 
 By default `/analyze` calls `HttpJsonLLMClient`, which talks to any OpenAI-chat-completions-shaped endpoint. Configure it via environment variables — **never commit a real key**:
 
