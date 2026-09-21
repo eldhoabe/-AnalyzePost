@@ -8,6 +8,7 @@ from app.models import AnalyzeRequest, AnalyzeResponse
 READ_EXAMPLE = {
     "recommendation": "READ",
     "signal_level": "HIGH",
+    "signal_score": 90,
     "relevance": 91,
     "specificity": 88,
     "originality": 82,
@@ -26,6 +27,7 @@ READ_EXAMPLE = {
 SKIP_EXAMPLE = {
     "recommendation": "SKIP",
     "signal_level": "LOW",
+    "signal_score": 24,
     "relevance": 32,
     "specificity": 21,
     "originality": 18,

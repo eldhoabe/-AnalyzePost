@@ -45,4 +45,5 @@ class Signals(BaseModel):
 class AnalyzeResponse(Signals):
     recommendation: Recommendation
     signal_level: SignalLevel
+    signal_score: int = Field(ge=0, le=100)
     reasons: list[str] = Field(min_length=1, max_length=3)
