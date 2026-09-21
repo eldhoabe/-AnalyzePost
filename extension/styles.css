@@ -1,0 +1,25 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #1a1a1a;
+  background: #ffffff;
+}
+
+body.popup {
+  width: 320px;
+  min-height: 120px;
+}
+
+body.options {
+  width: 480px;
+  padding: 16px;
+}
+
+#app {
+  padding: 16px;
+}
