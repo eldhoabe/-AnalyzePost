@@ -1,31 +1,7 @@
 from app.jev import score_post
 from app.models import Signals
-
-# Signal values consistent with the qualitative labels given for Post A /
-# Post B in product spec section 14 (the spec only gives qualitative
-# HIGH/MEDIUM/LOW labels there, not raw numbers).
-
-POST_A = Signals(
-    relevance=92,
-    specificity=90,
-    originality=85,
-    practical_value=92,
-    personal_experience=88,
-    engagement_bait=8,
-    promotional=5,
-    ai_style=10,
-)
-
-POST_B = Signals(
-    relevance=90,
-    specificity=20,
-    originality=20,
-    practical_value=20,
-    personal_experience=15,
-    engagement_bait=55,
-    promotional=15,
-    ai_style=70,
-)
+from tests.fixtures import POST_A_SIGNALS as POST_A
+from tests.fixtures import POST_B_SIGNALS as POST_B
 
 
 def test_post_a_concrete_experience_is_read_high():
