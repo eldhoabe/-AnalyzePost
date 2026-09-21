@@ -8,7 +8,7 @@ smoke tests.
 """
 
 from app.llm import SignalExtraction
-from app.models import Profile, Signals
+from app.models import Profile, Recommendation, Signals
 
 POST_A_TEXT = (
     "We migrated 12 .NET Framework services to .NET 8.\n\n"
@@ -62,5 +62,15 @@ POST_B_NOTES = {
     "originality": "Generic listicle framing common across LinkedIn",
 }
 
-POST_A_EXTRACTION = SignalExtraction(signals=POST_A_SIGNALS, notes=POST_A_NOTES)
-POST_B_EXTRACTION = SignalExtraction(signals=POST_B_SIGNALS, notes=POST_B_NOTES)
+# recommendation is set here (not left None) so these fixtures also exercise
+# the JevDecisionsClient code path -- where the recommendation comes
+# straight from the client rather than being derived by score_post()'s
+# threshold math. It agrees with what the thresholds would produce anyway,
+# so this changes no existing assertion; see test_jev_recommendation_overrides_thresholds
+# in test_analyze_endpoint.py for a case where the two genuinely diverge.
+POST_A_EXTRACTION = SignalExtraction(
+    signals=POST_A_SIGNALS, notes=POST_A_NOTES, recommendation=Recommendation.READ
+)
+POST_B_EXTRACTION = SignalExtraction(
+    signals=POST_B_SIGNALS, notes=POST_B_NOTES, recommendation=Recommendation.SKIP
+)

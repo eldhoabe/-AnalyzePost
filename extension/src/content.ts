@@ -89,10 +89,40 @@ export function extractPost(
   };
 }
 
+// LinkedIn's feed re-renders/reconciles its DOM frequently (observed
+// live: the same query can go from several matches to zero matches
+// between two checks a few seconds apart, with no scrolling in between --
+// not stale selectors, an actual transient state). A single synchronous
+// extractPost() call can race that and come back empty even when a post
+// is clearly on screen. Retry a few times with a short delay before
+// truly giving up, rather than failing on the first unlucky read.
+export function extractPostWithRetry(
+  root: ParentNode = document,
+  selectionNode: Node | null = typeof window !== "undefined"
+    ? (window.getSelection()?.anchorNode ?? null)
+    : null,
+  maxAttempts = 5,
+  delayMs = 200,
+): Promise<ExtractedPost | null> {
+  return new Promise((resolve) => {
+    let attempt = 0;
+    const tryOnce = () => {
+      const post = extractPost(root, selectionNode);
+      if (post || attempt >= maxAttempts - 1) {
+        resolve(post);
+        return;
+      }
+      attempt++;
+      setTimeout(tryOnce, delayMs);
+    };
+    tryOnce();
+  });
+}
+
 if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === "EXTRACT_POST") {
-      sendResponse(extractPost());
+      void extractPostWithRetry().then(sendResponse);
       return true;
     }
     return false;

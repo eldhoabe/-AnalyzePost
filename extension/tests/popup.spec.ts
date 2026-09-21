@@ -1,17 +1,25 @@
 // Real-browser test: loads the actual built extension into Chromium
 // (headless, pre-installed in this environment) and drives the popup.
 //
-// The seam we stub is chrome.runtime.sendMessage -- the contract between
-// popup.ts and background.ts -- rather than the network call itself.
-// That keeps this test focused on "does the popup correctly call
-// background and render whatever comes back" (background.ts's own
-// LinkedIn-tab-finding and fetch logic isn't real-browser-testable here
-// without a live, authenticated LinkedIn tab; see README for the manual
-// checklist that covers that).
+// The seams we stub are chrome.runtime.sendMessage (the contract between
+// popup.ts and background.ts for post extraction) and window.fetch (the
+// contract between popup.ts and the backend -- see src/analyze.ts and
+// background.ts's own comment on why the fetch lives in popup.ts, not the
+// service worker). That keeps this test focused on "does the popup
+// correctly orchestrate extraction + analysis and render whatever comes
+// back" (background.ts's own LinkedIn-tab-finding logic isn't
+// real-browser-testable here without a live, authenticated LinkedIn tab;
+// see README for the manual checklist that covers that).
 
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
-import type { AnalyzeResult } from "../src/types";
+import type { AnalyzeResult, ExtractedPost } from "../src/types";
 import { getExtensionId, launchExtension } from "./extension-harness";
+
+const SAMPLE_POST: ExtractedPost = {
+  author: "Jane Doe",
+  text: "We migrated 12 .NET Framework services to .NET 8.",
+  url: "https://www.linkedin.com/feed/update/urn:li:activity:123/",
+};
 
 const HIGH_SIGNAL_RESULT: AnalyzeResult = {
   recommendation: "READ",
@@ -59,14 +67,26 @@ test.afterEach(async () => {
   await context.close();
 });
 
-type BackgroundResponse = { ok: true; result: AnalyzeResult } | { ok: false; error: string };
+type ExtractResponse = { ok: true; post: ExtractedPost } | { ok: false; error: string };
 
-async function openPopupStubbedWith(response: BackgroundResponse): Promise<Page> {
+async function openPopupStubbedWith(
+  extractResponse: ExtractResponse,
+  analyzeResult?: AnalyzeResult,
+): Promise<Page> {
   const page = await context.newPage();
-  await page.addInitScript((resp) => {
-    // @ts-expect-error -- stubbing the extension messaging bridge for the test
-    window.chrome.runtime.sendMessage = async () => resp;
-  }, response);
+  await page.addInitScript(
+    ({ extractResponse, analyzeResult }) => {
+      // @ts-expect-error -- stubbing the extension messaging bridge for the test
+      window.chrome.runtime.sendMessage = async () => extractResponse;
+      if (analyzeResult) {
+        window.fetch = (async () =>
+          new Response(JSON.stringify(analyzeResult), {
+            status: 200,
+          })) as typeof fetch;
+      }
+    },
+    { extractResponse, analyzeResult },
+  );
   await page.goto(`chrome-extension://${extensionId}/popup.html`);
   return page;
 }
@@ -83,7 +103,7 @@ test("shows the initial button with no console errors", async () => {
 });
 
 test("renders a HIGH SIGNAL / READ result card", async () => {
-  const page = await openPopupStubbedWith({ ok: true, result: HIGH_SIGNAL_RESULT });
+  const page = await openPopupStubbedWith({ ok: true, post: SAMPLE_POST }, HIGH_SIGNAL_RESULT);
 
   await page.click("#analyze-button");
 
@@ -95,7 +115,7 @@ test("renders a HIGH SIGNAL / READ result card", async () => {
 });
 
 test("renders a LOW SIGNAL / SKIP result card", async () => {
-  const page = await openPopupStubbedWith({ ok: true, result: LOW_SIGNAL_RESULT });
+  const page = await openPopupStubbedWith({ ok: true, post: SAMPLE_POST }, LOW_SIGNAL_RESULT);
 
   await page.click("#analyze-button");
 
@@ -104,7 +124,7 @@ test("renders a LOW SIGNAL / SKIP result card", async () => {
   await expect(page.locator(".result-recommendation")).toHaveText("Recommendation: SKIP");
 });
 
-test("renders a visible error state when background reports failure", async () => {
+test("renders a visible error state when background can't find a post", async () => {
   const page = await openPopupStubbedWith({
     ok: false,
     error: "Couldn't find a LinkedIn post on this tab. Open a post and try again.",
@@ -132,6 +152,23 @@ test("renders a visible error state when sendMessage itself throws", async () =>
   await page.click("#analyze-button");
 
   await expect(page.locator("#error")).toHaveText("Extension context invalidated");
+});
+
+test("renders a visible error state when the backend fetch fails after a successful extraction", async () => {
+  const page = await context.newPage();
+  await page.addInitScript(
+    ({ extractResponse }) => {
+      // @ts-expect-error -- stubbing the extension messaging bridge for the test
+      window.chrome.runtime.sendMessage = async () => extractResponse;
+      window.fetch = (async () => new Response("", { status: 500 })) as typeof fetch;
+    },
+    { extractResponse: { ok: true, post: SAMPLE_POST } as ExtractResponse },
+  );
+  await page.goto(`chrome-extension://${extensionId}/popup.html`);
+
+  await page.click("#analyze-button");
+
+  await expect(page.locator("#error")).toHaveText("Backend returned 500");
 });
 
 test("retry button returns to the idle button after an error", async () => {

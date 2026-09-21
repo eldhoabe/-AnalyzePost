@@ -1,13 +1,17 @@
 // Popup UI (spec sections 4 and 10): a single button that asks
-// background.ts to analyze the current post, then renders a READ/MAYBE/
-// SKIP result card. Rendering is kept as small pure DOM functions so it
-// can be driven directly in a real browser without needing a live
-// LinkedIn tab or backend (see tests/popup.spec.ts).
+// background.ts to extract the current post, then calls the backend
+// itself (see src/analyze.ts -- deliberately not background.ts's job; see
+// its own comment) and renders a READ/MAYBE/SKIP result card. Rendering is
+// kept as small pure DOM functions so it can be driven directly in a real
+// browser without needing a live LinkedIn tab or backend (see
+// tests/popup.spec.ts).
 
-import type { AnalyzeResult, SignalLevel } from "./types";
+import { fetchAnalysis } from "./analyze";
+import { loadProfile } from "./storage";
+import type { ExtractedPost, AnalyzeResult, SignalLevel } from "./types";
 
-type AnalyzeMessage = { type: "ANALYZE_CURRENT_POST" };
-type BackgroundResponse = { ok: true; result: AnalyzeResult } | { ok: false; error: string };
+type ExtractMessage = { type: "EXTRACT_CURRENT_POST" };
+type ExtractResponse = { ok: true; post: ExtractedPost } | { ok: false; error: string };
 
 const SIGNAL_META: Record<SignalLevel, { emoji: string; label: string }> = {
   HIGH: { emoji: "🟢", label: "HIGH SIGNAL" },
@@ -88,9 +92,9 @@ export function renderResult(root: HTMLElement, result: AnalyzeResult): void {
 async function runAnalysis(root: HTMLElement): Promise<void> {
   renderLoading(root);
   try {
-    const message: AnalyzeMessage = { type: "ANALYZE_CURRENT_POST" };
+    const message: ExtractMessage = { type: "EXTRACT_CURRENT_POST" };
     const response = (await chrome.runtime.sendMessage(message)) as
-      | BackgroundResponse
+      | ExtractResponse
       | undefined;
 
     if (!response) {
@@ -101,7 +105,10 @@ async function runAnalysis(root: HTMLElement): Promise<void> {
       renderError(root, response.error);
       return;
     }
-    renderResult(root, response.result);
+
+    const profile = await loadProfile();
+    const result = await fetchAnalysis(response.post, profile);
+    renderResult(root, result);
   } catch (error) {
     renderError(root, error instanceof Error ? error.message : "Something went wrong.");
   }
