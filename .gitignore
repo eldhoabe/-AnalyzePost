@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Node / extension build
+node_modules/
+extension/dist/
+npm-debug.log*
+
+# Editors / OS
+.vscode/
+.DS_Store
+
+# Env
+.env
+.env.local
