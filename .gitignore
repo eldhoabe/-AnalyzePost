@@ -11,6 +11,11 @@ node_modules/
 extension/dist/
 npm-debug.log*
 
+# Playwright
+extension/test-results/
+extension/playwright-report/
+extension/blob-report/
+
 # Editors / OS
 .vscode/
 .DS_Store
