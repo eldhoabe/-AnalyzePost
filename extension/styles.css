@@ -23,3 +23,51 @@ body.options {
 #app {
   padding: 16px;
 }
+
+body.options h1 {
+  font-size: 18px;
+  margin: 0 0 4px;
+}
+
+body.options .muted {
+  color: #666;
+  font-size: 13px;
+  margin: 0 0 16px;
+}
+
+body.options form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+body.options label {
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 8px;
+}
+
+body.options input {
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+body.options button {
+  margin-top: 12px;
+  align-self: flex-start;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  background: #4f46e5;
+  color: white;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+body.options #status {
+  margin-left: 8px;
+  color: #16a34a;
+  font-size: 13px;
+}

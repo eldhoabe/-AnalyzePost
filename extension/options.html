@@ -6,7 +6,26 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body class="options">
-    <div id="app">Loading…</div>
+    <h1>Your profile</h1>
+    <p class="muted">
+      Used to personalize relevance scoring. Nothing here is sent anywhere
+      except alongside a post you explicitly choose to analyze.
+    </p>
+    <form id="profile-form">
+      <label for="role">Your role</label>
+      <input id="role" name="role" type="text" placeholder="Technical Lead" />
+
+      <label for="interests">Your interests (comma-separated)</label>
+      <input
+        id="interests"
+        name="interests"
+        type="text"
+        placeholder=".NET, AWS, React, AI, Architecture"
+      />
+
+      <button type="submit">Save</button>
+      <span id="status" role="status"></span>
+    </form>
     <script src="options.js"></script>
   </body>
 </html>
