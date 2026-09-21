@@ -8,7 +8,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "pretest:e2e": "npm run build",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "pretest:smoke": "npm run build",
+    "test:smoke": "playwright test --config=playwright.smoke.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

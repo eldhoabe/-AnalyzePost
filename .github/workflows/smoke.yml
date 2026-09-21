@@ -1,0 +1,35 @@
+name: smoke
+
+on:
+  push:
+    paths:
+      - "backend/**"
+      - "extension/**"
+      - "scripts/smoke-test.sh"
+      - ".github/workflows/smoke.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - "extension/**"
+      - "scripts/smoke-test.sh"
+      - ".github/workflows/smoke.yml"
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r backend/requirements.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: extension/package-lock.json
+      - run: npm ci
+        working-directory: extension
+      - run: npx playwright install --with-deps chromium
+        working-directory: extension
+      - run: bash scripts/smoke-test.sh
