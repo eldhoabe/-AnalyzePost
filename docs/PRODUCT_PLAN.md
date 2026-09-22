@@ -417,6 +417,23 @@ Final recommendation
 
 This makes the product easier to evolve than putting one giant prompt in the extension.
 
+> **Implementation note:** "JEV" here is literally [TypeSafe AI's Jev model](https://typesafe.ai/blog/introducing-system-one-models-and-jev) —
+> a "System One" structured-decision model reachable through OpenRouter's alpha Decisions API
+> (`POST https://openrouter.ai/api/alpha/decisions`, model `typesafe/jev-1.13`). It collapses the
+> "LLM / structured analysis" and "JEV decision engine" boxes above into one typed request: raw post
+> text + reader profile go in as `state`, the 8 signal dimensions and the READ/MAYBE/SKIP choice come
+> back as typed answers (not generated prose), so it can't hallucinate the recommendation. This *is*
+> "Raw signals → decision rules / bounded reasoning → final recommendation" — just with the real Jev
+> model doing the bounded reasoning instead of hand-written weights.
+>
+> `backend/app/jev.py`'s hand-written threshold math (`score_post`) still runs on every request as a
+> deterministic fallback and audit layer: it's what produces `signal_score` and the human-readable
+> `reasons` (Jev returns typed answers, not prose, so there's nothing else to build reasons text from),
+> and it's still the sole decision-maker for any `LLMClient` that doesn't supply its own recommendation
+> (e.g. a plain chat-completions model via `HttpJsonLLMClient`). See `backend/app/llm.py`'s
+> `JevDecisionsClient` for the integration, and the README's Backend section for the required
+> `JEV_API_URL` / `JEV_API_KEY` / `JEV_MODEL` environment variables.
+
 ---
 
 # 9. 2-Day MVP

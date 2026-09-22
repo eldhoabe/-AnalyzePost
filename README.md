@@ -82,15 +82,19 @@ python3 -m pytest
 
 (Use `python3 -m pytest` rather than a bare `pytest` — on some machines a `pytest` binary earlier on `PATH` resolves to a different Python installation than the one `pip install` just targeted, and you'll get a confusing `ModuleNotFoundError: fastapi` instead of your tests running.)
 
-By default `/analyze` calls `HttpJsonLLMClient`, which talks to any OpenAI-chat-completions-shaped endpoint. Configure it via environment variables — **never commit a real key**:
+By default `/analyze` calls `JevDecisionsClient` (`app/llm.py`), which calls the real **Jev** model from [TypeSafe AI](https://typesafe.ai) through OpenRouter's alpha Decisions API (`POST https://openrouter.ai/api/alpha/decisions`) — a structured "System One" decision model, not a chat model: one request scores all 8 signal dimensions *and* picks READ/MAYBE/SKIP directly, as typed answers rather than generated prose. This is what `app/jev.py`'s "JEV decision engine" (spec section 8, "Why JEV Fits") was describing all along. Configure it via environment variables — **never commit a real key**:
 
 ```bash
-export LLM_API_URL=https://api.openai.com/v1/chat/completions
-export LLM_API_KEY=sk-...
-export LLM_MODEL=gpt-4o-mini
+export JEV_API_URL=https://openrouter.ai/api/alpha/decisions   # default, rarely needs overriding
+export JEV_API_KEY=sk-or-v1-...                                 # your OpenRouter key
+export JEV_MODEL=typesafe/jev-1.13                              # default
 ```
 
 The API key lives only on the backend; the extension never sees it (`manifest.json`'s `host_permissions` only grants it access to call the backend, not any LLM provider directly).
+
+When Jev supplies a recommendation directly, it overrides `app/jev.py`'s own threshold-derived one (`main.py`'s `/analyze` handler) — `signal_score` and `reasons` still come from `app/jev.py`'s deterministic math over the returned signals (Jev doesn't generate prose), clamped to stay consistent with whichever recommendation won.
+
+A generic OpenAI-chat-completions-shaped client (`HttpJsonLLMClient`, configured via `LLM_API_URL`/`LLM_API_KEY`/`LLM_MODEL`) still exists in `app/llm.py` as an alternate path — swap it in via `get_llm_client` if you want a plain chat LLM doing extraction instead, with `app/jev.py`'s thresholds deciding the recommendation on their own.
 
 No database — the analysis cache and the (opt-in-only) raw-post store are both in-memory and reset on restart (see `app/cache.py`).
 

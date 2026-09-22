@@ -63,6 +63,34 @@ NEGATIVE_FALLBACK = {
 # low score is good.
 GOOD_WHEN_HIGH = frozenset(POSITIVE_WEIGHTS)
 
+# The 1:1 pairing between a recommendation and its signal level -- used both
+# by the threshold math below and by main.py when a client (e.g.
+# JevDecisionsClient) supplies its own recommendation directly and the level
+# just needs to follow it.
+LEVEL_FOR_RECOMMENDATION = {
+    Recommendation.READ: SignalLevel.HIGH,
+    Recommendation.MAYBE: SignalLevel.MAYBE,
+    Recommendation.SKIP: SignalLevel.LOW,
+}
+
+
+def clamp_score_to_level(signal_score: int, level: SignalLevel) -> int:
+    """Keep signal_score consistent with a level decided externally (e.g. by
+    JevDecisionsClient overriding score_post()'s own recommendation in
+    main.py) rather than derived from signal_score itself.
+
+    Without this, the two numbers in an AnalyzeResponse can visibly
+    disagree -- e.g. signal_score=0 next to signal_level="MAYBE" -- because
+    signal_score still comes from score_post()'s threshold-band math on the
+    same signals, and that math can land outside the band the external
+    level implies.
+    """
+    if level == SignalLevel.HIGH:
+        return max(signal_score, HIGH_THRESHOLD)
+    if level == SignalLevel.LOW:
+        return min(signal_score, LOW_THRESHOLD - 1)
+    return min(max(signal_score, LOW_THRESHOLD), HIGH_THRESHOLD - 1)
+
 
 def score_post(signals: Signals, notes: dict[str, str] | None = None) -> AnalyzeResponse:
     """Score a post's signals into a bounded recommendation.
