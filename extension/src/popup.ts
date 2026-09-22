@@ -1,18 +1,25 @@
-// Popup UI (spec sections 4 and 10): a single button that asks
-// background.ts to analyze the current post, then renders a READ/MAYBE/
-// SKIP result card. Rendering is kept as small pure DOM functions so it
-// can be driven directly in a real browser without needing a live
-// LinkedIn tab or backend (see tests/popup.spec.ts).
+// Popup UI: a "Should I Read This?" button that grabs the current
+// selection on the active tab (or offers a paste fallback if there isn't
+// one), then renders a READ/MAYBE/SKIP result card. On open, shows the
+// last result if one is persisted, instead of always starting idle.
+// Rendering is kept as small pure DOM functions so it can be driven
+// directly in a real browser without needing a live site or backend
+// (see tests/popup.spec.ts).
 
-import type { AnalyzeResult, SignalLevel } from "./types";
-
-type AnalyzeMessage = { type: "ANALYZE_CURRENT_POST" };
-type BackgroundResponse = { ok: true; result: AnalyzeResult } | { ok: false; error: string };
+import { browserAPI } from "./browser-compat";
+import { loadLastOutcome } from "./storage";
+import type { AnalyzeResult, AnalyzeSelectionMessage, BackgroundResponse, Recommendation, SignalLevel } from "./types";
 
 const SIGNAL_META: Record<SignalLevel, { emoji: string; label: string }> = {
   HIGH: { emoji: "🟢", label: "HIGH SIGNAL" },
   MAYBE: { emoji: "🟡", label: "MAYBE" },
   LOW: { emoji: "🔴", label: "LOW SIGNAL" },
+};
+
+const REASONS_INTRO: Record<Recommendation, string> = {
+  READ: "Worth reading because:",
+  MAYBE: "Mixed signal:",
+  SKIP: "Skip because:",
 };
 
 export function renderIdle(root: HTMLElement): void {
@@ -44,7 +51,37 @@ export function renderError(root: HTMLElement, message: string): void {
   root.appendChild(retry);
 }
 
-export function renderResult(root: HTMLElement, result: AnalyzeResult): void {
+export function renderPasteFallback(root: HTMLElement): void {
+  root.innerHTML = "";
+
+  const status = document.createElement("p");
+  status.id = "status";
+  status.textContent = "No text selected. Paste something to analyze:";
+  root.appendChild(status);
+
+  const textarea = document.createElement("textarea");
+  textarea.id = "paste-input";
+  textarea.rows = 6;
+  textarea.placeholder = "Paste the text here…";
+  root.appendChild(textarea);
+
+  const submit = document.createElement("button");
+  submit.id = "paste-analyze-button";
+  submit.textContent = "Analyze pasted text";
+  submit.addEventListener("click", () => {
+    const text = textarea.value.trim();
+    if (text) void runAnalysis(root, text);
+  });
+  root.appendChild(submit);
+
+  const cancel = document.createElement("button");
+  cancel.id = "paste-cancel-button";
+  cancel.textContent = "Cancel";
+  cancel.addEventListener("click", () => renderIdle(root));
+  root.appendChild(cancel);
+}
+
+export function renderResult(root: HTMLElement, result: AnalyzeResult, readingMinutes: number): void {
   const meta = SIGNAL_META[result.signal_level];
   root.innerHTML = "";
 
@@ -54,13 +91,13 @@ export function renderResult(root: HTMLElement, result: AnalyzeResult): void {
 
   const badge = document.createElement("div");
   badge.className = "result-badge";
-  badge.textContent = `${meta.emoji} ${meta.label}`;
+  badge.textContent = `${meta.emoji} ${meta.label} — ${result.signal_score}`;
   card.appendChild(badge);
 
-  const score = document.createElement("div");
-  score.className = "result-score";
-  score.textContent = `Signal: ${result.signal_score}`;
-  card.appendChild(score);
+  const intro = document.createElement("div");
+  intro.className = "result-reasons-intro";
+  intro.textContent = REASONS_INTRO[result.recommendation];
+  card.appendChild(intro);
 
   const reasons = document.createElement("ul");
   reasons.className = "result-reasons";
@@ -71,48 +108,60 @@ export function renderResult(root: HTMLElement, result: AnalyzeResult): void {
   }
   card.appendChild(reasons);
 
-  const recommendation = document.createElement("div");
-  recommendation.className = "result-recommendation";
-  recommendation.textContent = `Recommendation: ${result.recommendation}`;
-  card.appendChild(recommendation);
+  const readingTime = document.createElement("div");
+  readingTime.className = "result-reading-time";
+  readingTime.textContent = `Estimated reading time: ${readingMinutes} min`;
+  card.appendChild(readingTime);
 
   root.appendChild(card);
 
   const again = document.createElement("button");
   again.id = "analyze-again-button";
-  again.textContent = "Analyze another post";
+  again.textContent = "Analyze something else";
   again.addEventListener("click", () => renderIdle(root));
   root.appendChild(again);
 }
 
-async function runAnalysis(root: HTMLElement): Promise<void> {
+async function runAnalysis(root: HTMLElement, pastedText?: string): Promise<void> {
   renderLoading(root);
   try {
-    const message: AnalyzeMessage = { type: "ANALYZE_CURRENT_POST" };
-    const response = (await chrome.runtime.sendMessage(message)) as
-      | BackgroundResponse
-      | undefined;
+    const message: AnalyzeSelectionMessage = { type: "ANALYZE_SELECTION", pastedText };
+    const response = (await browserAPI.runtime.sendMessage(message)) as BackgroundResponse | undefined;
 
     if (!response) {
       renderError(root, "No response from the extension. Try reloading the page.");
       return;
     }
-    if (!response.ok) {
+    if (response.status === "empty") {
+      renderPasteFallback(root);
+      return;
+    }
+    if (response.status === "error") {
       renderError(root, response.error);
       return;
     }
-    renderResult(root, response.result);
+    renderResult(root, response.result, response.readingMinutes);
   } catch (error) {
     renderError(root, error instanceof Error ? error.message : "Something went wrong.");
   }
 }
 
-export function init(): void {
+export async function init(): Promise<void> {
   const root = document.querySelector<HTMLElement>("#app");
   if (!root) return;
-  renderIdle(root);
+
+  const last = await loadLastOutcome();
+  if (last?.status === "ok") {
+    renderResult(root, last.result, last.readingMinutes);
+    void browserAPI.action.setBadgeText({ text: "" });
+  } else if (last?.status === "error") {
+    renderError(root, last.error);
+    void browserAPI.action.setBadgeText({ text: "" });
+  } else {
+    renderIdle(root);
+  }
 }
 
 if (typeof document !== "undefined") {
-  document.addEventListener("DOMContentLoaded", init);
+  document.addEventListener("DOMContentLoaded", () => void init());
 }

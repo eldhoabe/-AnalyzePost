@@ -5,12 +5,12 @@
 // popup.ts and background.ts -- rather than the network call itself.
 // That keeps this test focused on "does the popup correctly call
 // background and render whatever comes back" (background.ts's own
-// LinkedIn-tab-finding and fetch logic isn't real-browser-testable here
-// without a live, authenticated LinkedIn tab; see README for the manual
-// checklist that covers that).
+// selection-grabbing and fetch logic isn't real-browser-testable here
+// without a live page to select text on; see the cross-stack smoke test
+// and the README's manual checklist for that).
 
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
-import type { AnalyzeResult } from "../src/types";
+import type { AnalyzeResult, BackgroundResponse } from "../src/types";
 import { getExtensionId, launchExtension } from "./extension-harness";
 
 const HIGH_SIGNAL_RESULT: AnalyzeResult = {
@@ -59,8 +59,6 @@ test.afterEach(async () => {
   await context.close();
 });
 
-type BackgroundResponse = { ok: true; result: AnalyzeResult } | { ok: false; error: string };
-
 async function openPopupStubbedWith(response: BackgroundResponse): Promise<Page> {
   const page = await context.newPage();
   await page.addInitScript((resp) => {
@@ -83,39 +81,89 @@ test("shows the initial button with no console errors", async () => {
 });
 
 test("renders a HIGH SIGNAL / READ result card", async () => {
-  const page = await openPopupStubbedWith({ ok: true, result: HIGH_SIGNAL_RESULT });
-
-  await page.click("#analyze-button");
-
-  await expect(page.locator(".result-card")).toHaveAttribute("data-signal-level", "HIGH");
-  await expect(page.locator(".result-badge")).toHaveText("🟢 HIGH SIGNAL");
-  await expect(page.locator(".result-score")).toHaveText("Signal: 91");
-  await expect(page.locator(".result-reasons li")).toHaveCount(3);
-  await expect(page.locator(".result-recommendation")).toHaveText("Recommendation: READ");
-});
-
-test("renders a LOW SIGNAL / SKIP result card", async () => {
-  const page = await openPopupStubbedWith({ ok: true, result: LOW_SIGNAL_RESULT });
-
-  await page.click("#analyze-button");
-
-  await expect(page.locator(".result-card")).toHaveAttribute("data-signal-level", "LOW");
-  await expect(page.locator(".result-badge")).toHaveText("🔴 LOW SIGNAL");
-  await expect(page.locator(".result-recommendation")).toHaveText("Recommendation: SKIP");
-});
-
-test("renders a visible error state when background reports failure", async () => {
   const page = await openPopupStubbedWith({
-    ok: false,
-    error: "Couldn't find a LinkedIn post on this tab. Open a post and try again.",
+    status: "ok",
+    result: HIGH_SIGNAL_RESULT,
+    readingMinutes: 5,
   });
 
   await page.click("#analyze-button");
 
-  await expect(page.locator("#error")).toBeVisible();
-  await expect(page.locator("#error")).toHaveText(
-    "Couldn't find a LinkedIn post on this tab. Open a post and try again.",
+  await expect(page.locator(".result-card")).toHaveAttribute("data-signal-level", "HIGH");
+  await expect(page.locator(".result-badge")).toHaveText("🟢 HIGH SIGNAL — 91");
+  await expect(page.locator(".result-reasons-intro")).toHaveText("Worth reading because:");
+  await expect(page.locator(".result-reasons li")).toHaveCount(3);
+  await expect(page.locator(".result-reading-time")).toHaveText("Estimated reading time: 5 min");
+});
+
+test("renders a LOW SIGNAL / SKIP result card", async () => {
+  const page = await openPopupStubbedWith({
+    status: "ok",
+    result: LOW_SIGNAL_RESULT,
+    readingMinutes: 3,
+  });
+
+  await page.click("#analyze-button");
+
+  await expect(page.locator(".result-card")).toHaveAttribute("data-signal-level", "LOW");
+  await expect(page.locator(".result-badge")).toHaveText("🔴 LOW SIGNAL — 24");
+  await expect(page.locator(".result-reasons-intro")).toHaveText("Skip because:");
+  await expect(page.locator(".result-reading-time")).toHaveText("Estimated reading time: 3 min");
+});
+
+test("shows a paste fallback when there's no active selection", async () => {
+  const page = await openPopupStubbedWith({ status: "empty" });
+
+  await page.click("#analyze-button");
+
+  await expect(page.locator("#paste-input")).toBeVisible();
+  await expect(page.locator("#status")).toHaveText("No text selected. Paste something to analyze:");
+});
+
+test("submitting pasted text produces a real result", async () => {
+  const page = await context.newPage();
+  await page.addInitScript(
+    (responses) => {
+      // @ts-expect-error -- stubbing the extension messaging bridge for the test
+      window.chrome.runtime.sendMessage = async (message: { pastedText?: string }) =>
+        message?.pastedText ? responses.withPaste : responses.withoutPaste;
+    },
+    {
+      withoutPaste: { status: "empty" } satisfies BackgroundResponse,
+      withPaste: {
+        status: "ok",
+        result: HIGH_SIGNAL_RESULT,
+        readingMinutes: 5,
+      } satisfies BackgroundResponse,
+    },
   );
+  await page.goto(`chrome-extension://${extensionId}/popup.html`);
+
+  await page.click("#analyze-button");
+  await expect(page.locator("#paste-input")).toBeVisible();
+  await page.fill("#paste-input", "Some text the user typed in by hand.");
+  await page.click("#paste-analyze-button");
+
+  await expect(page.locator(".result-card")).toHaveAttribute("data-signal-level", "HIGH");
+});
+
+test("cancel button in the paste fallback returns to the idle button", async () => {
+  const page = await openPopupStubbedWith({ status: "empty" });
+
+  await page.click("#analyze-button");
+  await expect(page.locator("#paste-input")).toBeVisible();
+  await page.click("#paste-cancel-button");
+
+  await expect(page.locator("#analyze-button")).toHaveText("Should I Read This?");
+});
+
+test("renders a visible error state when background reports failure", async () => {
+  const page = await openPopupStubbedWith({ status: "error", error: "Backend returned 500" });
+
+  await page.click("#analyze-button");
+
+  await expect(page.locator("#error")).toBeVisible();
+  await expect(page.locator("#error")).toHaveText("Backend returned 500");
   await expect(page.locator("#retry-button")).toBeVisible();
 });
 
@@ -135,7 +183,7 @@ test("renders a visible error state when sendMessage itself throws", async () =>
 });
 
 test("retry button returns to the idle button after an error", async () => {
-  const page = await openPopupStubbedWith({ ok: false, error: "network down" });
+  const page = await openPopupStubbedWith({ status: "error", error: "network down" });
 
   await page.click("#analyze-button");
   await expect(page.locator("#retry-button")).toBeVisible();

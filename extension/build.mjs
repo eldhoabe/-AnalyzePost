@@ -10,7 +10,6 @@ mkdirSync(outdir, { recursive: true });
 
 await build({
   entryPoints: {
-    content: "src/content.ts",
     background: "src/background.ts",
     popup: "src/popup.ts",
     options: "src/options.ts",
