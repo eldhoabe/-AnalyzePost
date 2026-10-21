@@ -6,8 +6,12 @@ const extensionPath = path.join(path.dirname(fileURLToPath(import.meta.url)), ".
 
 export async function launchExtension(): Promise<BrowserContext> {
   return chromium.launchPersistentContext("", {
-    headless: true,
-    args: [`--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`],
+    headless: false,
+    args: [
+      "--headless=new",
+      `--disable-extensions-except=${extensionPath}`,
+      `--load-extension=${extensionPath}`,
+    ],
   });
 }
 

@@ -1,12 +1,38 @@
 // Cross-stack smoke test (spec section 14): reproduces the Post A / Post B
 // worked examples through the REAL pipeline -- real backend (scripted LLM
 // client only, see backend/tests/smoke_server.py), real JEV engine, real
-// /analyze HTTP route, real content script, real background service
-// worker, real popup. Nothing here is stubbed except the LLM call itself,
-// which is the one piece that costs money / needs a real API key.
+// /analyze HTTP route, real background service worker, real popup. Nothing
+// here is stubbed except the LLM call itself, which is the one piece that
+// costs money / needs a real API key.
 //
 // Requires the scripted backend already running on :8000 -- see
-// scripts/smoke-test.sh, which is what `npm run smoke` (repo root) runs.
+// scripts/smoke-test.sh, which is what `bash scripts/smoke-test.sh` (repo
+// root) runs.
+//
+// Drives the popup's PASTE path, not its text-selection-grab path. That's
+// not a simplification of convenience -- the selection-grab path
+// (background.ts's grabActiveSelection, via chrome.scripting.executeScript
+// under the activeTab permission) turns out to be un-drivable from
+// Playwright at all: activeTab's temporary grant only activates on a
+// genuine user gesture invoking the extension (a real toolbar-icon click),
+// and navigating straight to chrome-extension://<id>/popup.html -- the
+// only way Playwright can open an MV3 popup -- doesn't count as one.
+// Confirmed directly: chrome.scripting.executeScript against the source
+// tab in this exact setup throws "Cannot access contents of the page.
+// Extension manifest must request permission to access the respective
+// host." -- Chrome's standard missing-host-permission error, not a bug in
+// background.ts (real toolbar clicks do grant activeTab correctly; this
+// is a Playwright/MV3-testing limitation, not a product one). Combined
+// with the right-click context-menu path also being un-drivable
+// (Playwright can't operate native OS context menus), NEITHER of
+// background.ts's two real entry points can be exercised end-to-end here
+// -- both are covered instead by background.test.ts, which mocks
+// chrome.scripting/chrome.tabs/chrome.contextMenus directly, sidestepping
+// the permission question entirely, plus the manual checklist in the
+// README. What Playwright *can* drive for real is the paste path (no
+// activeTab dependency), which still exercises the real popup -> real
+// background.ts (handleAnalyzeSelection's paste branch) -> real backend
+// chain this test exists to prove.
 
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { getExtensionId, launchExtension } from "../extension-harness";
@@ -23,23 +49,6 @@ const POST_B_TEXT =
   "AI is changing everything.\n\n" +
   "Here are 5 things every developer needs to know in 2026...";
 
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-function linkedinPageHtml(text: string, urn: string): string {
-  return `<!doctype html>
-<html>
-  <body>
-    <div class="feed-shared-update-v2" data-urn="urn:li:activity:${urn}">
-      <div class="feed-shared-update-v2__description"><span class="break-words">${escapeHtml(
-        text,
-      )}</span></div>
-    </div>
-  </body>
-</html>`;
-}
-
 let context: BrowserContext;
 let extensionId: string;
 
@@ -52,17 +61,16 @@ test.afterEach(async () => {
   await context.close();
 });
 
-async function analyzeLinkedInPost(text: string, urn: string): Promise<Page> {
-  const linkedInPage = await context.newPage();
-  await linkedInPage.route("https://www.linkedin.com/**", (route) =>
-    route.fulfill({ contentType: "text/html", body: linkedinPageHtml(text, urn) }),
-  );
-  await linkedInPage.goto("https://www.linkedin.com/feed/");
-  await linkedInPage.bringToFront();
-
+async function analyzePastedText(text: string): Promise<Page> {
   const popup = await context.newPage();
   await popup.goto(`chrome-extension://${extensionId}/popup.html`);
   await popup.click("#analyze-button");
+
+  // No real tab/selection to grab in this harness (see file header) --
+  // expected to land on the paste fallback every time.
+  await popup.waitForSelector("#paste-input", { timeout: 10_000 });
+  await popup.fill("#paste-input", text);
+  await popup.click("#paste-analyze-button");
 
   await Promise.race([
     popup.waitForSelector(".result-card", { timeout: 15_000 }),
@@ -82,15 +90,15 @@ async function analyzeLinkedInPost(text: string, urn: string): Promise<Page> {
 }
 
 test("Post A (concrete migration story) comes back READ / HIGH through the real backend", async () => {
-  const popup = await analyzeLinkedInPost(POST_A_TEXT, "7001111111111111111");
+  const popup = await analyzePastedText(POST_A_TEXT);
 
   await expect(popup.locator(".result-card")).toHaveAttribute("data-signal-level", "HIGH");
-  await expect(popup.locator(".result-recommendation")).toHaveText("Recommendation: READ");
+  await expect(popup.locator(".result-reasons-intro")).toHaveText("Worth reading because:");
 });
 
 test("Post B (relevant but generic) comes back SKIP / LOW through the real backend -- despite being just as relevant as Post A", async () => {
-  const popup = await analyzeLinkedInPost(POST_B_TEXT, "7002222222222222222");
+  const popup = await analyzePastedText(POST_B_TEXT);
 
   await expect(popup.locator(".result-card")).toHaveAttribute("data-signal-level", "LOW");
-  await expect(popup.locator(".result-recommendation")).toHaveText("Recommendation: SKIP");
+  await expect(popup.locator(".result-reasons-intro")).toHaveText("Skip because:");
 });
