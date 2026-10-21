@@ -8,6 +8,10 @@ export interface Profile {
 export type Recommendation = "READ" | "MAYBE" | "SKIP";
 export type SignalLevel = "HIGH" | "MAYBE" | "LOW";
 
+export interface ExtractedPost {
+  text: string;
+}
+
 export interface AnalyzeResult {
   recommendation: Recommendation;
   signal_level: SignalLevel;
