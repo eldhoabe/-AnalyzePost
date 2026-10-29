@@ -1,16 +1,12 @@
-// Real-browser test: loads the actual built extension into Chromium
-// (headless, pre-installed in this environment) and drives the popup.
+// Real-browser test: loads the actual built extension into Chromium and drives
+// the popup in its new role as a last-result viewer.
 //
-// The seam we stub is chrome.runtime.sendMessage -- the contract between
-// popup.ts and background.ts -- rather than the network call itself.
-// That keeps this test focused on "does the popup correctly call
-// background and render whatever comes back" (background.ts's own
-// selection-grabbing and fetch logic isn't real-browser-testable here
-// without a live page to select text on; see the cross-stack smoke test
-// and the README's manual checklist for that).
+// The seam we stub is chrome.storage.session.get (the key "lastOutcome") —
+// the same key that loadLastOutcome() reads in storage.ts. This lets us
+// control exactly what the popup sees without a live background service worker.
 
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
-import type { AnalyzeResult, BackgroundResponse } from "../src/types";
+import type { AnalyzeOutcome, AnalyzeResult } from "../src/types";
 import { getExtensionId, launchExtension } from "./extension-harness";
 
 const HIGH_SIGNAL_RESULT: AnalyzeResult = {
@@ -59,135 +55,87 @@ test.afterEach(async () => {
   await context.close();
 });
 
-async function openPopupStubbedWith(response: BackgroundResponse): Promise<Page> {
+/** Open the popup with chrome.storage.session.get stubbed to return `outcome`. */
+async function openPopupWithOutcome(outcome: AnalyzeOutcome | null): Promise<Page> {
   const page = await context.newPage();
-  await page.addInitScript((resp) => {
-    // @ts-expect-error -- stubbing the extension messaging bridge for the test
-    window.chrome.runtime.sendMessage = async () => resp;
-  }, response);
+  await page.addInitScript((stored) => {
+    // Stub only the session.get call; leave everything else untouched.
+    // @ts-expect-error — patching the extension API for test isolation
+    window.chrome.storage.session.get = (_key: string, cb: (r: Record<string, unknown>) => void) => {
+      cb(stored === null ? {} : { lastOutcome: stored });
+    };
+  }, outcome);
   await page.goto(`chrome-extension://${extensionId}/popup.html`);
   return page;
 }
 
-test("shows the initial button with no console errors", async () => {
-  const page = await context.newPage();
-  const errors: string[] = [];
-  page.on("pageerror", (err) => errors.push(String(err)));
+// ── Empty state ────────────────────────────────────────────────────────────────
 
+test("shows the empty state with no console errors when no prior analysis", async () => {
+  const errors: string[] = [];
+  const page = await context.newPage();
+  page.on("pageerror", (err) => errors.push(String(err)));
+  await page.addInitScript(() => {
+    // @ts-expect-error
+    window.chrome.storage.session.get = (_key: string, cb: (r: Record<string, unknown>) => void) => cb({});
+  });
   await page.goto(`chrome-extension://${extensionId}/popup.html`);
 
-  await expect(page.locator("#analyze-button")).toHaveText("Should I Read This?");
+  await expect(page.locator(".ap-popup-empty__title")).toHaveText("No analysis yet");
+  await expect(page.locator(".ap-popup-empty__hint").first()).toContainText("Analyze this post");
   expect(errors).toEqual([]);
 });
 
-test("renders a HIGH SIGNAL / READ result card", async () => {
-  const page = await openPopupStubbedWith({
+// ── Result states ──────────────────────────────────────────────────────────────
+
+test("renders a READ result from the last analysis", async () => {
+  const outcome: AnalyzeOutcome = {
     status: "ok",
     result: HIGH_SIGNAL_RESULT,
     readingMinutes: 5,
-  });
+  };
+  const page = await openPopupWithOutcome(outcome);
 
-  await page.click("#analyze-button");
-
-  await expect(page.locator(".result-card")).toHaveAttribute("data-signal-level", "HIGH");
-  await expect(page.locator(".result-badge")).toHaveText("🟢 HIGH SIGNAL — 91");
-  await expect(page.locator(".result-reasons-intro")).toHaveText("Worth reading because:");
-  await expect(page.locator(".result-reasons li")).toHaveCount(3);
-  await expect(page.locator(".result-reading-time")).toHaveText("Estimated reading time: 5 min");
+  await expect(page.locator(".ap-popup-result")).toBeVisible();
+  await expect(page.locator(".ap-popup-result__label")).toHaveText("READ");
+  await expect(page.locator(".ap-popup-result__score")).toContainText("91");
+  await expect(page.locator(".ap-popup-result__reasons li")).toHaveCount(3);
+  await expect(page.locator(".ap-popup-result__meta")).toContainText("5 min");
 });
 
-test("renders a LOW SIGNAL / SKIP result card", async () => {
-  const page = await openPopupStubbedWith({
+test("renders a SKIP result from the last analysis", async () => {
+  const outcome: AnalyzeOutcome = {
     status: "ok",
     result: LOW_SIGNAL_RESULT,
     readingMinutes: 3,
-  });
+  };
+  const page = await openPopupWithOutcome(outcome);
 
-  await page.click("#analyze-button");
-
-  await expect(page.locator(".result-card")).toHaveAttribute("data-signal-level", "LOW");
-  await expect(page.locator(".result-badge")).toHaveText("🔴 LOW SIGNAL — 24");
-  await expect(page.locator(".result-reasons-intro")).toHaveText("Skip because:");
-  await expect(page.locator(".result-reading-time")).toHaveText("Estimated reading time: 3 min");
+  await expect(page.locator(".ap-popup-result")).toBeVisible();
+  await expect(page.locator(".ap-popup-result__label")).toHaveText("SKIP");
+  await expect(page.locator(".ap-popup-result__score")).toContainText("24");
+  await expect(page.locator(".ap-popup-result__meta")).toContainText("3 min");
 });
 
-test("shows a paste fallback when there's no active selection", async () => {
-  const page = await openPopupStubbedWith({ status: "empty" });
+test("shows footer hint to use right-click on any result", async () => {
+  const outcome: AnalyzeOutcome = {
+    status: "ok",
+    result: HIGH_SIGNAL_RESULT,
+    readingMinutes: 2,
+  };
+  const page = await openPopupWithOutcome(outcome);
 
-  await page.click("#analyze-button");
-
-  await expect(page.locator("#paste-input")).toBeVisible();
-  await expect(page.locator("#status")).toHaveText("No text selected. Paste something to analyze:");
+  await expect(page.locator(".ap-popup-footer")).toContainText("Analyze this post");
 });
 
-test("submitting pasted text produces a real result", async () => {
-  const page = await context.newPage();
-  await page.addInitScript(
-    (responses) => {
-      // @ts-expect-error -- stubbing the extension messaging bridge for the test
-      window.chrome.runtime.sendMessage = async (message: { pastedText?: string }) =>
-        message?.pastedText ? responses.withPaste : responses.withoutPaste;
-    },
-    {
-      withoutPaste: { status: "empty" } satisfies BackgroundResponse,
-      withPaste: {
-        status: "ok",
-        result: HIGH_SIGNAL_RESULT,
-        readingMinutes: 5,
-      } satisfies BackgroundResponse,
-    },
-  );
-  await page.goto(`chrome-extension://${extensionId}/popup.html`);
+// ── Error state ────────────────────────────────────────────────────────────────
 
-  await page.click("#analyze-button");
-  await expect(page.locator("#paste-input")).toBeVisible();
-  await page.fill("#paste-input", "Some text the user typed in by hand.");
-  await page.click("#paste-analyze-button");
+test("renders the error state when the last analysis failed", async () => {
+  const outcome: AnalyzeOutcome = { status: "error", error: "Backend returned 500" };
+  const page = await openPopupWithOutcome(outcome);
 
-  await expect(page.locator(".result-card")).toHaveAttribute("data-signal-level", "HIGH");
-});
-
-test("cancel button in the paste fallback returns to the idle button", async () => {
-  const page = await openPopupStubbedWith({ status: "empty" });
-
-  await page.click("#analyze-button");
-  await expect(page.locator("#paste-input")).toBeVisible();
-  await page.click("#paste-cancel-button");
-
-  await expect(page.locator("#analyze-button")).toHaveText("Should I Read This?");
-});
-
-test("renders a visible error state when background reports failure", async () => {
-  const page = await openPopupStubbedWith({ status: "error", error: "Backend returned 500" });
-
-  await page.click("#analyze-button");
-
-  await expect(page.locator("#error")).toBeVisible();
-  await expect(page.locator("#error")).toHaveText("Backend returned 500");
-  await expect(page.locator("#retry-button")).toBeVisible();
-});
-
-test("renders a visible error state when sendMessage itself throws", async () => {
-  const page = await context.newPage();
-  await page.addInitScript(() => {
-    // @ts-expect-error -- stubbing the extension messaging bridge for the test
-    window.chrome.runtime.sendMessage = async () => {
-      throw new Error("Extension context invalidated");
-    };
-  });
-  await page.goto(`chrome-extension://${extensionId}/popup.html`);
-
-  await page.click("#analyze-button");
-
-  await expect(page.locator("#error")).toHaveText("Extension context invalidated");
-});
-
-test("retry button returns to the idle button after an error", async () => {
-  const page = await openPopupStubbedWith({ status: "error", error: "network down" });
-
-  await page.click("#analyze-button");
-  await expect(page.locator("#retry-button")).toBeVisible();
-  await page.click("#retry-button");
-
-  await expect(page.locator("#analyze-button")).toHaveText("Should I Read This?");
+  await expect(page.locator(".ap-popup-error")).toBeVisible();
+  await expect(page.locator(".ap-popup-error__msg")).toHaveText("Backend returned 500");
+  // Hint to re-trigger analysis should still be shown.
+  await expect(page.locator(".ap-popup-empty__hint")).toContainText("Analyze this post");
 });
