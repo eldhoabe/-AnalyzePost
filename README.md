@@ -1,19 +1,37 @@
-# LinkedIn Signal
-
-**Should I read this?**
-
-A Chrome extension + small backend that scores any text you select — on LinkedIn, on any other site, or pasted in by hand — on relevance, specificity, originality, practical value, and engagement-bait/promotional signals, and returns a bounded **READ / MAYBE / SKIP** recommendation with reasons and an estimated reading time, personalized to your role and interests. Installed name is "Should I Read This?"; this repo keeps its original working name.
-
-It is deliberately **not** an AI-detector: AI-style phrasing is one minor signal among several, never the headline. The core claim, proven by the [cross-stack smoke test](#cross-stack-smoke-test): **a post can be highly relevant and still be low signal** — that distinction is the whole point.
-
-Full product spec: [`docs/PRODUCT_PLAN.md`](docs/PRODUCT_PLAN.md). The spec's own core mechanics (backend pipeline, signal dimensions, JEV decision engine) are unchanged; what's changed since is *how the extension gets the text* — originally LinkedIn-DOM scraping, now browser text selection (see "Why text selection, not scraping" below).
-
-```
-Select text (any site) → right-click "Should I Read This?"
-  (or: popup button, grabbing the current selection, with a paste fallback)
-  → send text to backend → LLM/Jev signal extraction → JEV decision engine
-  → { signal_level, recommendation, 3 reasons, reading time } → display result
-```
+Readme intro · MD
+# Should I Read This?
+ 
+**Know in one second whether a piece of text is worth your time.**
+ 
+Select any text, on any site, and get a small **READ / MAYBE / SKIP** verdict right next to it, with three reasons and an estimated reading time, tuned to your role and interests. No tab-switching, no pasting into a chatbot, no reading the whole thing to find out it wasn't worth it.
+ 
+---
+ 
+## Why this is needed
+ 
+Almost everything we read online is optimised to get *clicked*, not to be *useful*. The cost isn't the one bad post; it's the hundreds of small decisions a day about what deserves attention:
+ 
+- Feeds are full of posts that are **on-topic but empty**: confident tone, no specifics, nothing you can act on.
+- Articles bury the one useful paragraph under 1,500 words of padding, or are really a sales pitch.
+- Reviews are a coin flip: some are detailed and honest, many are one-line praise, templated, or written to be seen.
+- Reading it all just to judge it defeats the point of judging it.
+Should I Read This? gives you a fast, consistent second opinion, so you spend attention where it pays off.
+ 
+## Where you'd use it
+ 
+| You're looking at | You select | It looks for | You get |
+|---|---|---|---|
+| **A LinkedIn post** | The post text | Specific details vs. vague claims, original experience vs. recycled advice, practical takeaways vs. engagement bait ("agree?", "repost ♻️") | A verdict before you scroll past or fall into the comments |
+| **An article or blog post** | The intro, or the whole piece | Does it deliver concrete, usable information, or is it generic, padded, or promotional? Is it relevant to *your* work? | READ / SKIP plus a reading-time estimate, so you can decide whether it's a 2-minute skim or a pass |
+| **Product reviews** (shop pages, app stores, forums) | One review, or a block of them | Concrete usage details (how long, what for, what broke), a balanced view, signs of a template or pure promotion | Which reviews carry real information, so you can read those first |
+| **Google reviews** (Maps, local businesses) | A review or a few | Specific experience (what was ordered, what happened, when) vs. generic praise or complaints with no detail | A quick read on which reviews are worth trusting your decision to |
+| **Anything else** (newsletters, threads, announcements, emails) | Any text | The same signals, scored the same way | The same bounded verdict |
+ 
+*Illustrative verdicts, not benchmarks:* a detailed "bought this 8 months ago, the hinge failed after the first winter, support replaced it in 3 days" review scores high on specificity and practical value; "Great product!! Highly recommend!!!" scores low on everything and gets SKIP.
+ 
+## The core idea
+ 
+**A post can be highly relevant and still be low signal.** Being on-topic is not the same as being worth your time. Should I Read This? scores relevance *separately* from specificity, originality, practical value, and engagement-bait / promotional signals, and then combines them into one bounded recommendation. That distinction is the whole point, and it is verified end to end by the [cross-stack smoke test](#cross-stack-smoke-test).
 
 ## Architecture
 
