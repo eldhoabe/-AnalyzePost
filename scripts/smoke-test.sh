@@ -10,11 +10,13 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
+echo "==> Installing backend dependencies"
+(cd backend && python3 -m pip install -q -r requirements.txt)
+
 echo "==> Starting scripted backend on :8000"
-# Use the venv interpreter so uvicorn and all deps are available.
 # `exec` replaces the subshell with the python process itself, so $! is
 # the real server PID rather than a shell wrapper kill can't reach.
-(cd backend && exec .venv/bin/python3 -m tests.smoke_server) &
+(cd backend && exec python3 -m tests.smoke_server) &
 BACKEND_PID=$!
 cleanup() {
   kill "$BACKEND_PID" 2>/dev/null || true
