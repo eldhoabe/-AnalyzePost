@@ -1,4 +1,3 @@
-Readme intro · MD
 # Should I Read This?
  
 **Know in one second whether a piece of text is worth your time.**
