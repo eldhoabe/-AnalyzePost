@@ -138,13 +138,15 @@ export function Card({
           </button>
         )}
 
-        <button
-          class="ap-card__close-btn"
-          onClick={onCollapse}
-          aria-label="Collapse to chip"
-        >
-          ↙
-        </button>
+        {!compact && (
+          <button
+            class="ap-card__close-btn"
+            onClick={onCollapse}
+            aria-label="Collapse to chip"
+          >
+            ↙
+          </button>
+        )}
         <button
           class="ap-card__close-btn"
           onClick={onClose}
@@ -153,6 +155,13 @@ export function Card({
           ✕
         </button>
       </div>
+
+      {/* Compact subtitle — "Mixed signal · N min read" */}
+      {compact && (
+        <div class="ap-card__subtitle">
+          {REASONS_INTRO[result.recommendation]} · {readingMinutes} min read
+        </div>
+      )}
 
       {/* Body */}
       <div
@@ -189,11 +198,7 @@ export function Card({
           })}
         </div>
 
-        {compact ? (
-          <p class="ap-card__reading-time ap-card__reading-time--compact">
-            ~{readingMinutes} min read · click to expand
-          </p>
-        ) : (
+        {compact ? null : (
           <>
             {!showAll && (
               <button

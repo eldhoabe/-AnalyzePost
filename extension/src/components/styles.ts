@@ -127,6 +127,23 @@ export const SHADOW_STYLES = `
 .ap-chip--skip  { color: var(--ap-skip);  background: var(--ap-skip-bg);  border-color: var(--ap-skip-border);  }
 .ap-chip--error { color: var(--ap-skip);  background: var(--ap-skip-bg);  border-color: var(--ap-skip-border);  font-weight: 500; }
 
+/* Circle icon inside chip — matches card header icon style */
+.ap-chip__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.ap-chip--read  .ap-chip__icon { background: var(--ap-read);  color: #fff; }
+.ap-chip--maybe .ap-chip__icon { background: var(--ap-maybe); color: #fff; }
+.ap-chip--skip  .ap-chip__icon { background: var(--ap-skip);  color: #fff; }
+
 .ap-chip__action {
   background: none;
   border: none;
@@ -201,7 +218,21 @@ export const SHADOW_STYLES = `
   align-items: baseline;
   gap: 6px;
 }
-.ap-card__icon { font-size: 18px; line-height: 1; }
+.ap-card__icon {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.ap-card__head--read  .ap-card__icon { background: var(--ap-read);  color: #fff; }
+.ap-card__head--maybe .ap-card__icon { background: var(--ap-maybe); color: #fff; }
+.ap-card__head--skip  .ap-card__icon { background: var(--ap-skip);  color: #fff; }
 .ap-card__label {
   font-size: 15px;
   font-weight: 700;
@@ -363,11 +394,12 @@ export const SHADOW_STYLES = `
   width: 268px;
 }
 
-.ap-card__reading-time--compact {
-  display: block;
-  font-size: 11px;
+/* Subtitle shown only in compact card: "Mixed signal · N min read" */
+.ap-card__subtitle {
+  padding: 4px 14px 8px;
+  font-size: 12px;
   color: var(--ap-muted);
-  margin-top: 8px;
+  border-bottom: 1px solid var(--ap-border);
 }
 
 /* ── Pin button active state ─────────────────────────────── */

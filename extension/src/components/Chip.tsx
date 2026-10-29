@@ -4,9 +4,9 @@ const VERDICT_META: Record<
   Recommendation,
   { icon: string; label: string; cls: string }
 > = {
-  READ:  { icon: "✅", label: "READ",  cls: "ap-chip--read"  },
-  MAYBE: { icon: "🟡", label: "MAYBE", cls: "ap-chip--maybe" },
-  SKIP:  { icon: "⛔", label: "SKIP",  cls: "ap-chip--skip"  },
+  READ:  { icon: "✓", label: "READ",  cls: "ap-chip--read"  },
+  MAYBE: { icon: "ⓘ", label: "MAYBE", cls: "ap-chip--maybe" },
+  SKIP:  { icon: "✕", label: "SKIP",  cls: "ap-chip--skip"  },
 };
 
 interface ChipProps {
