@@ -1,84 +1,135 @@
-// Service worker: relays a popup's "extract the current post" request to
-// the content script on the relevant LinkedIn tab.
-//
-// Deliberately does NOT call the backend itself. Chrome can suspend an MV3
-// service worker when it judges it idle, which can silently drop an
-// in-flight fetch() -- and having DevTools open on the service worker
-// masks this entirely, because Chrome keeps an inspected service worker
-// alive. (Observed directly: this extension worked with the background
-// service worker's DevTools open and failed once closed -- the textbook
-// symptom.) popup.ts does the backend fetch instead (see src/analyze.ts):
-// a popup page stays alive for as long as it's open and isn't subject to
-// the same suspension.
+// Service worker: two entry points (right-click a selection anywhere, or
+// the popup button) both funnel into analyzeAndRecord(), which posts to
+// the backend, estimates reading time, persists the outcome so the popup
+// can show it later, and sets a colored/scored toolbar badge.
 
-import type { ExtractedPost } from "./types";
+import { browserAPI } from "./browser-compat";
+import { API_BASE } from "./config";
+import { estimateReadingMinutes } from "./readingTime";
+import { getSelectedText } from "./selection";
+import { loadProfile, saveLastOutcome } from "./storage";
+import type {
+  AnalyzeOutcome,
+  AnalyzeResult,
+  AnalyzeSelectionMessage,
+  BackgroundResponse,
+} from "./types";
 
-type ExtractMessage = { type: "EXTRACT_CURRENT_POST" };
-type BackgroundResponse = { ok: true; post: ExtractedPost } | { ok: false; error: string };
+const CONTEXT_MENU_ID = "analyze-selection";
 
-async function findLinkedInTabId(): Promise<number | null> {
-  const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (activeTab?.url?.includes("linkedin.com")) {
-    return activeTab.id ?? null;
-  }
+const BADGE_COLOR: Record<AnalyzeResult["signal_level"], string> = {
+  HIGH: "#16a34a",
+  MAYBE: "#ca8a04",
+  LOW: "#b91c1c",
+};
 
-  // The active tab isn't LinkedIn (e.g. the user is on the extension's
-  // own page). Fall back to the most recently accessed LinkedIn tab
-  // instead of giving up -- a real popup never steals tab focus, but
-  // this keeps things working in the same edge cases either way.
-  const linkedInTabs = await chrome.tabs.query({ url: "https://www.linkedin.com/*" });
-  const mostRecent = [...linkedInTabs].sort(
-    (a, b) => (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0),
-  )[0];
-  return mostRecent?.id ?? null;
-}
-
-async function extractPostFromLinkedInTab(): Promise<ExtractedPost | null> {
-  const tabId = await findLinkedInTabId();
-  if (tabId == null) return null;
-
-  const message = { type: "EXTRACT_POST" };
-  try {
-    return await chrome.tabs.sendMessage(tabId, message);
-  } catch (error) {
-    // Chrome only injects content_scripts into a tab on a real document
-    // load. A tab that was already open before the extension was
-    // installed/reloaded has no listener yet, and this is the (fairly
-    // cryptic) error chrome.tabs.sendMessage throws in that case --
-    // reword it into something the user can actually act on.
-    if (error instanceof Error && error.message.includes("Receiving end does not exist")) {
-      throw new Error(
-        "This LinkedIn tab hasn't loaded the extension yet. Reload the tab and try again.",
-      );
-    }
-    throw error;
-  }
-}
-
-export async function handleExtractCurrentPost(): Promise<BackgroundResponse> {
-  try {
-    const post = await extractPostFromLinkedInTab();
-    if (!post) {
-      return {
-        ok: false,
-        error: "Couldn't find a LinkedIn post on this tab. Open a post and try again.",
-      };
-    }
-    return { ok: true, post };
-  } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : "Couldn't read the LinkedIn post.",
-    };
-  }
-}
-
-if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
-  chrome.runtime.onMessage.addListener((message: ExtractMessage, _sender, sendResponse) => {
-    if (message?.type === "EXTRACT_CURRENT_POST") {
-      void handleExtractCurrentPost().then(sendResponse);
-      return true; // keep the message channel open for the async response
-    }
-    return false;
+async function analyzeText(text: string): Promise<AnalyzeResult> {
+  const profile = await loadProfile();
+  const response = await fetch(`${API_BASE}/analyze`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ postText: text, profile }),
   });
+
+  if (!response.ok) {
+    throw new Error(`Backend returned ${response.status}`);
+  }
+  return (await response.json()) as AnalyzeResult;
+}
+
+async function recordOutcome(outcome: AnalyzeOutcome): Promise<void> {
+  await saveLastOutcome(outcome);
+
+  if (outcome.status === "ok") {
+    await browserAPI.action.setBadgeText({ text: String(outcome.result.signal_score) });
+    await browserAPI.action.setBadgeBackgroundColor({
+      color: BADGE_COLOR[outcome.result.signal_level],
+    });
+  } else {
+    await browserAPI.action.setBadgeText({ text: "!" });
+    await browserAPI.action.setBadgeBackgroundColor({ color: "#b91c1c" });
+  }
+}
+
+export async function analyzeAndRecord(text: string): Promise<BackgroundResponse> {
+  try {
+    const result = await analyzeText(text);
+    const outcome: AnalyzeOutcome = {
+      status: "ok",
+      result,
+      readingMinutes: estimateReadingMinutes(text),
+    };
+    await recordOutcome(outcome);
+    return outcome;
+  } catch (error) {
+    const outcome: AnalyzeOutcome = {
+      status: "error",
+      error: error instanceof Error ? error.message : "Couldn't reach the analysis backend.",
+    };
+    await recordOutcome(outcome);
+    return outcome;
+  }
+}
+
+async function grabActiveSelection(): Promise<string> {
+  const [tab] = await browserAPI.tabs.query({ active: true, currentWindow: true });
+  if (tab?.id == null) return "";
+
+  try {
+    const [injection] = await browserAPI.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: getSelectedText,
+    });
+    return injection?.result ?? "";
+  } catch {
+    // Restricted page (chrome://, the Web Store, ...) -- fall through to
+    // the paste UI rather than surfacing this as an error.
+    return "";
+  }
+}
+
+export async function handleAnalyzeSelection(pastedText?: string): Promise<BackgroundResponse> {
+  const text = pastedText?.trim() || (await grabActiveSelection());
+  if (!text) return { status: "empty" };
+  return analyzeAndRecord(text);
+}
+
+// Guarded (rather than called unconditionally) so importing this module
+// never throws in an environment where neither `chrome` nor `browser` has
+// been set up yet -- e.g. a test file's static imports run before its
+// beforeEach installs a chrome mock. Checked directly via typeof (always
+// safe for a possibly-undeclared global) rather than through browserAPI,
+// since browserAPI's own resolution throws when neither global exists.
+const hasExtensionRuntime =
+  typeof globalThis.chrome !== "undefined" || typeof globalThis.browser !== "undefined";
+
+if (hasExtensionRuntime) {
+  // --- Entry point 1: right-click a selection, anywhere ---
+
+  browserAPI.runtime.onInstalled.addListener(() => {
+    browserAPI.contextMenus.removeAll(() => {
+      browserAPI.contextMenus.create({
+        id: CONTEXT_MENU_ID,
+        title: "Should I Read This?",
+        contexts: ["selection"],
+      });
+    });
+  });
+
+  browserAPI.contextMenus.onClicked.addListener((info) => {
+    if (info.menuItemId !== CONTEXT_MENU_ID || !info.selectionText) return;
+    void analyzeAndRecord(info.selectionText);
+  });
+
+  // --- Entry point 2: the popup button (with a paste fallback) ---
+
+  browserAPI.runtime.onMessage.addListener(
+    (message: AnalyzeSelectionMessage, _sender, sendResponse) => {
+      if (message?.type === "ANALYZE_SELECTION") {
+        void handleAnalyzeSelection(message.pastedText).then(sendResponse);
+        return true; // keep the message channel open for the async response
+      }
+      return false;
+    },
+  );
 }
