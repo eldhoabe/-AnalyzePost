@@ -13,12 +13,15 @@ await build({
     background: "src/background.ts",
     popup: "src/popup.ts",
     options: "src/options.ts",
+    content: "src/content.tsx",
   },
   bundle: true,
   format: "iife",
   target: "es2022",
   outdir,
   sourcemap: true,
+  jsx: "automatic",
+  jsxImportSource: "preact",
   logLevel: "info",
 });
 

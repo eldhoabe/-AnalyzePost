@@ -36,13 +36,15 @@ export function installChromeStorageMock(): StorageArea {
   return sync;
 }
 
-// Fuller mock for background.ts's tests: storage (sync + session), tabs,
-// scripting, and action as vi.fn() spies so tests can assert on calls.
+// Fuller mock for background.ts's tests: storage (sync + session + local),
+// tabs, scripting, action, commands, all as vi.fn() spies.
 export interface BackgroundChromeMock {
   sync: StorageArea;
   session: StorageArea;
+  local: StorageArea;
   tabsQuery: ReturnType<typeof vi.fn>;
   executeScript: ReturnType<typeof vi.fn>;
+  sendMessage: ReturnType<typeof vi.fn>;
   setBadgeText: ReturnType<typeof vi.fn>;
   setBadgeBackgroundColor: ReturnType<typeof vi.fn>;
 }
@@ -50,27 +52,33 @@ export interface BackgroundChromeMock {
 export function installBackgroundChromeMock(): BackgroundChromeMock {
   const sync = makeStorageArea();
   const session = makeStorageArea();
+  const local = makeStorageArea();
   const tabsQuery = vi.fn();
   const executeScript = vi.fn();
+  const sendMessage = vi.fn();
   const setBadgeText = vi.fn();
   const setBadgeBackgroundColor = vi.fn();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (globalThis as any).chrome = {
-    storage: { sync, session },
-    tabs: { query: tabsQuery },
+    storage: { sync, session, local },
+    tabs: { query: tabsQuery, sendMessage },
     scripting: { executeScript },
     action: { setBadgeText, setBadgeBackgroundColor },
     runtime: {
       onInstalled: { addListener: vi.fn() },
       onMessage: { addListener: vi.fn() },
+      lastError: undefined,
     },
     contextMenus: {
       create: vi.fn(),
       removeAll: vi.fn((callback?: () => void) => callback?.()),
       onClicked: { addListener: vi.fn() },
     },
+    commands: {
+      onCommand: { addListener: vi.fn() },
+    },
   };
 
-  return { sync, session, tabsQuery, executeScript, setBadgeText, setBadgeBackgroundColor };
+  return { sync, session, local, tabsQuery, executeScript, sendMessage, setBadgeText, setBadgeBackgroundColor };
 }

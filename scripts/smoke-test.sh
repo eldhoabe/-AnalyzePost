@@ -10,6 +10,9 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
+echo "==> Installing backend dependencies"
+(cd backend && python3 -m pip install -q -r requirements.txt)
+
 echo "==> Starting scripted backend on :8000"
 # `exec` replaces the subshell with the python process itself, so $! is
 # the real server PID rather than a shell wrapper kill can't reach.

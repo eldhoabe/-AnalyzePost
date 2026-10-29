@@ -1,12 +1,37 @@
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from app.cache import AnalysisCache, PostStore, hash_key
 from app.jev import LEVEL_FOR_RECOMMENDATION, clamp_score_to_level, score_post
 from app.llm import JevDecisionsClient, LLMClient
 from app.models import AnalyzeRequest, AnalyzeResponse
 
+# ── Rate limiter ───────────────────────────────────────────────────────────────
+limiter = Limiter(key_func=get_remote_address)
+
+# ── App ────────────────────────────────────────────────────────────────────────
 app = FastAPI(title="LinkedIn Signal API")
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# ── CORS ───────────────────────────────────────────────────────────────────────
+# Restrict to the Chrome extension origin and localhost for local debugging.
+# Replace <YOUR_EXTENSION_ID> with the production extension's ID once published.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "chrome-extension://<YOUR_EXTENSION_ID>",
+        "http://localhost:3000",
+    ],
+    allow_methods=["POST", "OPTIONS"],
+    allow_headers=["*"],
+)
+
+# ── State ──────────────────────────────────────────────────────────────────────
 analysis_cache = AnalysisCache()
 post_store = PostStore()
 
@@ -21,21 +46,25 @@ def get_llm_client() -> LLMClient:
     return _default_llm_client
 
 
+# ── Routes ─────────────────────────────────────────────────────────────────────
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
 @app.post("/analyze", response_model=AnalyzeResponse)
+@limiter.limit("20/minute")
 def analyze(
-    request: AnalyzeRequest,
+    request: Request,
+    body: AnalyzeRequest,
     llm_client: LLMClient = Depends(get_llm_client),
 ) -> AnalyzeResponse:
-    key = hash_key(request.postText, request.profile)
+    key = hash_key(body.postText, body.profile)
 
     result = analysis_cache.get(key)
     if result is None:
-        extraction = llm_client.extract(request.postText, request.profile)
+        extraction = llm_client.extract(body.postText, body.profile)
         result = score_post(extraction.signals, extraction.notes)
         # JevDecisionsClient decides the recommendation itself (it's asked
         # directly, not just for the 8 signals) -- when it does, that
@@ -55,7 +84,7 @@ def analyze(
     # Privacy default (spec section 12): raw post text is discarded unless
     # the caller explicitly opts in. The cache above never sees it either
     # way -- it only ever holds the hash key and the derived scores.
-    if request.save_post:
-        post_store.save(key, request.postText)
+    if body.save_post:
+        post_store.save(key, body.postText)
 
     return result

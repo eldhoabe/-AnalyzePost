@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Should I Read This?",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Select any text, right-click, and get a relevance + quality signal before you spend time reading it.",
   "action": {
     "default_popup": "popup.html",
@@ -18,6 +18,22 @@
   },
   "background": {
     "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "commands": {
+    "analyze-selection": {
+      "suggested_key": {
+        "default": "Alt+A",
+        "mac": "Alt+A"
+      },
+      "description": "Analyze the selected text"
+    }
   },
   "options_page": "options.html",
   "permissions": ["activeTab", "storage", "scripting", "contextMenus"],

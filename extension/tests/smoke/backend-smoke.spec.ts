@@ -1,44 +1,34 @@
 // Cross-stack smoke test (spec section 14): reproduces the Post A / Post B
-// worked examples through the REAL pipeline -- real backend (scripted LLM
-// client only, see backend/tests/smoke_server.py), real JEV engine, real
-// /analyze HTTP route, real background service worker, real popup. Nothing
-// here is stubbed except the LLM call itself, which is the one piece that
-// costs money / needs a real API key.
+// worked examples through the REAL pipeline — real backend (scripted LLM
+// client, see backend/tests/smoke_server.py), real JEV engine, real /analyze
+// HTTP route, real background service worker.  Nothing is stubbed except the
+// LLM call itself, which is the one piece that costs money / needs a real key.
 //
-// Requires the scripted backend already running on :8000 -- see
-// scripts/smoke-test.sh, which is what `bash scripts/smoke-test.sh` (repo
-// root) runs.
+// Requires the scripted backend already running on :8000 — see
+// scripts/smoke-test.sh.
 //
-// Drives the popup's PASTE path, not its text-selection-grab path. That's
-// not a simplification of convenience -- the selection-grab path
-// (background.ts's grabActiveSelection, via chrome.scripting.executeScript
-// under the activeTab permission) turns out to be un-drivable from
-// Playwright at all: activeTab's temporary grant only activates on a
-// genuine user gesture invoking the extension (a real toolbar-icon click),
-// and navigating straight to chrome-extension://<id>/popup.html -- the
-// only way Playwright can open an MV3 popup -- doesn't count as one.
-// Confirmed directly: chrome.scripting.executeScript against the source
-// tab in this exact setup throws "Cannot access contents of the page.
-// Extension manifest must request permission to access the respective
-// host." -- Chrome's standard missing-host-permission error, not a bug in
-// background.ts (real toolbar clicks do grant activeTab correctly; this
-// is a Playwright/MV3-testing limitation, not a product one). Combined
-// with the right-click context-menu path also being un-drivable
-// (Playwright can't operate native OS context menus), NEITHER of
-// background.ts's two real entry points can be exercised end-to-end here
-// -- both are covered instead by background.test.ts, which mocks
-// chrome.scripting/chrome.tabs/chrome.contextMenus directly, sidestepping
-// the permission question entirely, plus the manual checklist in the
-// README. What Playwright *can* drive for real is the paste path (no
-// activeTab dependency), which still exercises the real popup -> real
-// background.ts (handleAnalyzeSelection's paste branch) -> real backend
-// chain this test exists to prove.
+// The popup no longer has a paste-text path (it was removed when the popup
+// was repurposed as a last-result viewer).  We drive the pipeline instead by
+// sending an ANALYZE_SELECTION message directly from an extension-page
+// context — the same legacy message path that background.ts still handles for
+// backward compat.  This exercises the full chain:
+//
+//   page.evaluate → chrome.runtime.sendMessage (ANALYZE_SELECTION)
+//     → background.ts handleAnalyzeSelection
+//       → real HTTP POST /analyze on :8000
+//         → JEV scoring
+//           → AnalyzeOutcome returned to sendMessage callback
+//
+// The right-click context-menu path and the Alt+A keyboard path are
+// un-drivable from Playwright (see the file history for the explanation);
+// they are covered by background.test.ts + the README manual checklist.
 
-import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test, type BrowserContext } from "@playwright/test";
+import type { AnalyzeOutcome } from "../../src/types";
 import { getExtensionId, launchExtension } from "../extension-harness";
 
-// Must match backend/tests/fixtures.py exactly: the scripted backend keys
-// its canned LLM responses on exact post text equality.
+// Must match backend/tests/fixtures.py exactly: the scripted backend keys its
+// canned LLM responses on exact post-text equality.
 const POST_A_TEXT =
   "We migrated 12 .NET Framework services to .NET 8.\n\n" +
   "The biggest problem wasn't the code migration. It was a hidden " +
@@ -61,44 +51,62 @@ test.afterEach(async () => {
   await context.close();
 });
 
-async function analyzePastedText(text: string): Promise<Page> {
-  const popup = await context.newPage();
-  await popup.goto(`chrome-extension://${extensionId}/popup.html`);
-  await popup.click("#analyze-button");
+/**
+ * Send an ANALYZE_SELECTION message from an extension page so that
+ * background.ts receives it and calls the real backend.  Returns the
+ * AnalyzeOutcome (or throws if the backend is unreachable).
+ */
+async function analyzeViaBackground(text: string): Promise<AnalyzeOutcome> {
+  // Any extension page gives us the chrome API — reuse the popup URL.
+  const page = await context.newPage();
+  await page.goto(`chrome-extension://${extensionId}/popup.html`);
 
-  // No real tab/selection to grab in this harness (see file header) --
-  // expected to land on the paste fallback every time.
-  await popup.waitForSelector("#paste-input", { timeout: 10_000 });
-  await popup.fill("#paste-input", text);
-  await popup.click("#paste-analyze-button");
+  const outcome = await page.evaluate(async (postText: string) => {
+    return new Promise<unknown>((resolve, reject) => {
+      // @ts-ignore — chrome is available inside the extension page
+      chrome.runtime.sendMessage(
+        { type: "ANALYZE_SELECTION", pastedText: postText },
+        (resp: unknown) => {
+          // @ts-ignore
+          if (chrome.runtime.lastError) {
+            // @ts-ignore
+            reject(new Error(chrome.runtime.lastError.message));
+          } else {
+            resolve(resp);
+          }
+        },
+      );
+    });
+  }, text);
 
-  await Promise.race([
-    popup.waitForSelector(".result-card", { timeout: 15_000 }),
-    popup.waitForSelector("#error", { timeout: 15_000 }),
-  ]);
+  await page.close();
 
-  const errorEl = popup.locator("#error");
-  if (await errorEl.count()) {
-    const message = await errorEl.textContent();
+  const result = outcome as AnalyzeOutcome;
+  if (result.status === "error") {
     throw new Error(
-      `Popup showed an error instead of a result (is the scripted backend running on :8000? ` +
-        `see scripts/smoke-test.sh): ${message}`,
+      `Backend returned an error (is the scripted backend running on :8000? ` +
+        `see scripts/smoke-test.sh): ${result.error}`,
     );
   }
-
-  return popup;
+  return result;
 }
 
 test("Post A (concrete migration story) comes back READ / HIGH through the real backend", async () => {
-  const popup = await analyzePastedText(POST_A_TEXT);
+  const outcome = await analyzeViaBackground(POST_A_TEXT);
 
-  await expect(popup.locator(".result-card")).toHaveAttribute("data-signal-level", "HIGH");
-  await expect(popup.locator(".result-reasons-intro")).toHaveText("Worth reading because:");
+  expect(outcome.status).toBe("ok");
+  if (outcome.status !== "ok") return;
+
+  expect(outcome.result.signal_level).toBe("HIGH");
+  expect(outcome.result.recommendation).toBe("READ");
 });
 
-test("Post B (relevant but generic) comes back SKIP / LOW through the real backend -- despite being just as relevant as Post A", async () => {
-  const popup = await analyzePastedText(POST_B_TEXT);
+test("Post B (relevant but generic) comes back SKIP / LOW through the real backend", async () => {
+  const outcome = await analyzeViaBackground(POST_B_TEXT);
 
-  await expect(popup.locator(".result-card")).toHaveAttribute("data-signal-level", "LOW");
-  await expect(popup.locator(".result-reasons-intro")).toHaveText("Skip because:");
+  expect(outcome.status).toBe("ok");
+  if (outcome.status !== "ok") return;
+
+  expect(outcome.result.signal_level).toBe("LOW");
+  expect(outcome.result.recommendation).toBe("SKIP");
 });
