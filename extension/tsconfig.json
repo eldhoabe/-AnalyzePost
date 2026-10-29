@@ -11,6 +11,8 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "types": ["chrome"],
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
     "outDir": "dist",
     "rootDir": "src"
   },
