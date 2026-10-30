@@ -1,3 +1,4 @@
-// Backend base URL. Update for a deployed backend; manifest.json's
-// host_permissions must be kept in sync with this.
-export const API_BASE = "http://localhost:8000";
+// Injected at build time by build.mjs via esbuild define.
+// Dev default: http://localhost:8000 (set API_BASE_URL env var for release builds).
+declare const __API_BASE__: string;
+export const API_BASE = __API_BASE__;
