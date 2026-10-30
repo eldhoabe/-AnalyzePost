@@ -149,3 +149,5 @@ body.options button {
   cursor: pointer;
 }
 body.options #status { margin-left: 8px; color: #16a34a; font-size: 13px; }
+.ap-privacy-link { color: #9ca3af; text-decoration: none; }
+.ap-privacy-link:hover { text-decoration: underline; }
