@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Should I Read This?",
-  "version": "0.3.0",
+  "version": "0.1.0",
   "description": "Select any text, right-click, and get a relevance + quality signal before you spend time reading it.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArnW4OuQbELV7LqC1IeyHYuWWhltGBa723qIY+OhPZk3UsKUNDy8mRp+gVRqim6wWDWZzYEaSEBg9PzLoQ0gidn8IVL5G7pTzOe3p484e2YoPy+dnx5O40vndo7q7kXrVVa58AfHfT70bO7m1mgwpYgY8KFWpq6ff4On358TBVWWnH4f+nEb+gc12l6RxEquGy7aMAKXnJDKnD40XZH0+iAqwg5Remf2mFlOCzaBYmmghmMX3tN9luZSGE7z4FOxlZxKP5Oc7lx30kKrZCuexAzMnS3khxOeAopQKQ76sNFSdtQW9nYSvE+uM88G8aj9QWM4igJtxhfzA6fR29RUokwIDAQAB",
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
