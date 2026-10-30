@@ -58,6 +58,7 @@ def health() -> dict[str, str]:
 
 @app.post("/analyze", response_model=AnalyzeResponse)
 @limiter.limit("20/minute")
+@limiter.limit("200/day")
 def analyze(
     request: Request,
     body: AnalyzeRequest,
