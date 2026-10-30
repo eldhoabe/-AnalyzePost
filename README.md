@@ -128,10 +128,16 @@ No database — the analysis cache and the (opt-in-only) raw-post store are both
 
 ## Extension
 
+> **Beta testers:** see [docs/INSTALL.md](docs/INSTALL.md) for the tester install guide.
+
+**Stable extension ID:** `nphfjeopioiieifdandhaalinoegikhf`
+_(Set this as `CHROME_EXTENSION_ID` in the Render backend env vars so CORS allows the extension to call the API.)_
+
 ```bash
 cd extension
 npm install
-npm run build        # -> extension/dist/
+npm run build        # -> extension/dist/ (dev, points at localhost:8000)
+API_BASE_URL=https://analyzepost.onrender.com npm run build  # release build
 ```
 
 Load it in Chrome:
@@ -198,6 +204,24 @@ Automated coverage stops at the two points above (an unmockable `activeTab` gest
 7. Click the toolbar icon on a page/tab with **nothing selected**. Confirm the popup shows a paste box instead of erroring; paste some text in and click **"Analyze pasted text"** — confirm it produces a real result.
 8. Try a post that's topically relevant to your profile but generic/low-effort — confirm it can still come back `SKIP`/`LOW` (the core thesis: relevant ≠ high signal).
 9. If the extension ever shows a blank/broken popup instead of one of the above, that's a real bug — file it; a paste-fallback or an explicit error state should be the worst case, never a silent failure.
+
+## Releasing
+
+To cut a new beta release:
+
+1. **Bump the version** in `extension/package.json` (e.g. `"version": "0.2.0"`). This is the single source of truth — the build syncs it into `manifest.json` automatically.
+2. **Commit and push** to `main`.
+3. **Tag and push:**
+   ```bash
+   git tag v0.2.0
+   git push origin v0.2.0
+   ```
+4. The `release` workflow triggers automatically. It builds with the `API_BASE_URL` repository variable, runs the secret-grep check, zips `dist/`, and creates a GitHub Release with `should-i-read-this-v0.2.0.zip` and a `.sha256` checksum attached.
+5. Share the Releases page link with testers. They follow [docs/INSTALL.md](docs/INSTALL.md).
+
+**Dry run (no release created):** use the **Actions → release → Run workflow** button with "Dry run" checked. The zip is uploaded as a workflow artifact instead.
+
+> **Before your first release:** set the repository variable `API_BASE_URL` to `https://analyzepost.onrender.com` in **GitHub → Settings → Secrets and variables → Actions → Variables**.
 
 ## Out of scope for this MVP
 

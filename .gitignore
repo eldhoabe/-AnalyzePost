@@ -23,3 +23,6 @@ extension/blob-report/
 # Env
 .env
 .env.local
+
+# Extension signing key — keep this file safe, do NOT commit
+extension-private.pem
