@@ -54,7 +54,7 @@ function renderResult(root: HTMLElement, outcome: AnalyzeOutcome): void {
       <ul class="ap-popup-result__reasons">${topReasons}</ul>
       <p class="ap-popup-result__meta">~${readingMinutes} min read</p>
     </div>
-    <p class="ap-popup-footer">Select text → right-click → <strong>Analyze this post</strong></p>
+    <p class="ap-popup-footer">Select text → right-click → <strong>Analyze this post</strong> · <a class="ap-privacy-link" href="https://github.com/eldhoabe/-AnalyzePost/blob/main/docs/PRIVACY.md" target="_blank" rel="noopener">Privacy</a></p>
   `;
 }
 
