@@ -1,3 +1,4 @@
+import os
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -22,14 +23,13 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # ── CORS ───────────────────────────────────────────────────────────────────────
-# Restrict to the Chrome extension origin and localhost for local debugging.
-# Replace <YOUR_EXTENSION_ID> with the production extension's ID once published.
+_extension_id = os.getenv("CHROME_EXTENSION_ID", "")
+_origins = [f"chrome-extension://{_extension_id}"] if _extension_id else []
+_origins.append("http://localhost:3000")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "chrome-extension://<YOUR_EXTENSION_ID>",
-        "http://localhost:3000",
-    ],
+    allow_origins=_origins,
     allow_methods=["POST", "OPTIONS"],
     allow_headers=["*"],
 )
