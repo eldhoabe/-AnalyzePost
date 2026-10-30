@@ -8,6 +8,8 @@ services:
     envVars:
       - key: JEV_API_KEY
         sync: false
+      - key: CHROME_EXTENSION_ID
+        sync: false
       - key: JEV_API_URL
         value: https://openrouter.ai/api/alpha/decisions
       - key: JEV_MODEL
