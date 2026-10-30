@@ -16,7 +16,6 @@
 When you analyze text, the extension sends:
 
 - the text you selected (long selections may be cut to a maximum length)
-- your role and interests, if you set them in the extension, so the verdict can be tuned to you
 
 That is all. We don't send the page's URL, your browsing history, your account details or anything else on the page.
 
@@ -34,7 +33,7 @@ These providers process the text to return a result. Each has its own privacy po
 
 - **On our servers:** nothing about your text or your results.
 - **Temporarily, to keep the service working:** our server may handle your request's technical details (such as your IP address) in memory to enforce usage limits. We don't keep them afterwards.
-- **On your device:** the extension stores your settings (and your role and interests, if you enter them) in your browser. This stays on your device, and you can clear it any time by removing the extension or its data.
+- **On your device:** the extension stores your settings. This stays on your device, and you can clear it any time by removing the extension or its data.
 
 ## Permissions the extension asks for
 
@@ -42,7 +41,6 @@ These providers process the text to return a result. Each has its own privacy po
 |---|---|
 | Context menu | To add the **Analyze this post** option when you select text |
 | Active tab / the page you are on | To read the text you selected, only when you ask |
-| Storage | To save your settings on your device |
 | Access to our server | To send your selected text and receive the verdict |
 
 ## What we don't do
@@ -63,4 +61,4 @@ If this changes (for example, if we add feedback that saves text), we'll update 
 
 ## Contact
 
-Questions about privacy: [your email address]
+Questions about privacy: Contact Me
